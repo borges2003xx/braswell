@@ -1,6 +1,6 @@
 /// -*- tab-width: 4; Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil -*-
 
-#define THISFIRMWARE "ArduPlane V2.68"
+#define THISFIRMWARE "ArduPlane V2.68 (with Thermal Hunt)"
 /*
  *  Authors:    Doug Weibel, Jose Julio, Jordi Munoz, Jason Short, Andrew Tridgell, Randy Mackay, Pat Hickey, John Arne Birkeland, Olivier Adler, Amilcar Lucas, Gregory Fletcher
  *  Thanks to:  Chris Anderson, Michael Oborne, Paul Mather, Bill Premerlani, James Cohen, JB from rotorFX, Automatik, Fefenin, Peter Meister, Remzibi, Yury Smirnov, Sandro Benigno, Max Levine, Roberto Navoni, Lorenz Meier, Yury MonZon
@@ -327,6 +327,12 @@ static uint32_t last_heartbeat_ms;
 // A timer used to track how long we have been in a "short failsafe" condition due to loss of RC signal
 static uint32_t ch3_failsafe_timer = 0;
 
+
+static int32_t thermal_hunting_min_altitude = g.thermal_min_alt * 100;  //defauld min 150 mt
+static int32_t thermal_hunting_max_altitude = g.thermal_max_alt * 100;  //default max 1000 mt
+static int8_t th_loiter_radius = g.loiter_radius;
+static int8_t l_radius_vector = 1;
+ 
 ////////////////////////////////////////////////////////////////////////////////
 // LED output
 ////////////////////////////////////////////////////////////////////////////////
@@ -836,10 +842,17 @@ static void medium_loop()
         // -------------------------------
         read_control_switch();
 
+        //Search for Thermal Soaring
+        #if THERMAL_HUNTING_MODE != DISABLED
+        ThermalHunting();
+        #endif
+        
+        
         // calculate the plane's desired bearing
         // -------------------------------------
         navigate();
-
+       
+       
         break;
 
     // command processing
@@ -1097,7 +1110,6 @@ static void update_current_flight_mode(void)
             calc_nav_roll();
             calc_nav_pitch();
             calc_throttle();
-            control_mode = thermal(AUTO);
             break;
         }
     }else{
@@ -1158,7 +1170,6 @@ static void update_current_flight_mode(void)
             if (inverted_flight) {
                 nav_pitch_cd = -nav_pitch_cd;
             }
-            control_mode = thermal(FLY_BY_WIRE_A);
             break;
         }
 
@@ -1205,8 +1216,6 @@ static void update_current_flight_mode(void)
             if (failsafe != FAILSAFE_NONE) {
                 g.channel_throttle.servo_out = g.throttle_cruise;
             }
-            // If we were thermaling, is it time to transition to cruise?
-            control_mode = cruise(control_mode);
             break;
 
         case MANUAL:
